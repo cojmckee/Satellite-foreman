@@ -1,0 +1,116 @@
+---
+- name : Register to new satellite
+  hosts: all
+
+  vars:
+    REMOTE_USER: root
+    AK: RHEL8
+    SAT: sat6.home.mckeefamily.net
+    ORG: home_lab
+    IP: 192.168.100.3
+    SAT_S: sat6
+
+  tasks:
+  - name: Add Sat6 hosts to hosts name
+    lineinfile:
+      path: /etc/hosts      
+      line: "{{ IP }}   {{SAT_S}}   {{SAT}}"
+      state: present
+
+  - name: remove old subscription
+    redhat_subscription:
+      state: absent
+
+  - name: Update subscription-manager
+    yum:
+      name: subscription-manager
+      state: latest
+
+  - name: remove old rpms from Satellite 5 or Satellite 6
+    yum:
+      name:
+        - katello-ca-consumer-*.noarch
+        - rhn-check
+        - rhncfg-client
+        - rhncfg-management
+        - rhn-setup
+        - rhnlib
+        - rhn-client-tools
+        - rhncfg
+        - yum-rhn-plugin
+        - rhnsd
+        - rhncfg-actions
+        - osad
+        - epel-release
+        - spacewalk-abrt
+        - spacewalk-oscap
+        - osad
+      state: absent
+
+  - name: Clean subscription metadata
+    command: subscription-manager clean
+
+  - name: Enable and restart the rhsmcertd service
+    service:
+      name: rhsmcertd
+      enabled: True
+      state: restarted
+
+  - name: get the pre-built Katello-ca RPM
+    get_url:
+      url: http://{{ SAT }}/pub/katello-ca-consumer-latest.noarch.rpm
+      dest: /root/katello-ca-consumer-latest.noarch.rpm
+
+  - name: Install local Katello-ca RPM
+    yum:
+      name: /root/katello-ca-consumer-latest.noarch.rpm
+      state: present
+
+  - name: Using an Activation Key for register to the new satellite 6
+    redhat_subscription:
+      state: present
+      activationkey: "{{ AK }}"
+      org_id: "{{ ORG }}"
+      pool: '^Red Hat Enterprise Server$'
+
+  - name: enable Satellite tools repo for RHEL 6 and 7
+    rhsm_repository:
+      name: rhel-*-satellite-tools-6.*-rpms
+      state: present
+    when:
+      ( ansible_distribution == "RedHat" and
+        ansible_distribution_major_version == "7" )
+      or
+      ( ansible_distribution == "RedHat" and
+        ansible_distribution_major_version == "6" )
+
+  - name: enable Satellite tools for RHEL 8
+    rhsm_repository:
+      name: satellite-tools-6.*-for-rhel-8-x86_64-rpms
+      state: present
+    when:
+      ( ansible_distribution == "RedHat" and
+        ansible_distribution_major_version == "8" )
+
+  - name: Install a list of packages on all systems
+    yum:
+      name:
+        - sos
+        - katello-agent
+        - insights-client
+        - puppet
+      state: latest
+
+  - name: install Packages on RHEL 6 or RHEL 7
+    yum:
+      name:
+        - screen
+        - python-requests
+      state: latest
+    when:
+      ( ansible_distribution == "RedHat" and
+        ansible_distribution_major_version == "7" )
+      or
+      ( ansible_distribution == "RedHat" and
+        ansible_distribution_major_version == "6" )
+
